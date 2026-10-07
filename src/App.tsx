@@ -689,6 +689,83 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen bg-kids-bg flex flex-col items-center justify-center text-kids-text font-display">
+        <motion.div
+          animate={{ rotate: 360, scale: [1, 1.2, 1] }}
+          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          className="mb-6"
+        >
+          <Hand size={80} className="text-kids-primary drop-shadow-lg" />
+        </motion.div>
+        <p className="text-2xl font-bold animate-bounce text-kids-primary">Checking Magic Portal...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-kids-bg flex flex-col items-center justify-center p-6 text-kids-text font-sans relative overflow-hidden select-none">
+        {/* Playful Floating Circles */}
+        <div className="absolute top-[10%] left-[-10%] w-[50%] h-[50%] bg-kids-primary/10 blur-[120px] rounded-full pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-kids-secondary/10 blur-[120px] rounded-full pointer-events-none" />
+        <div className="absolute top-[30%] right-[5%] w-[30%] h-[30%] bg-kids-accent/10 blur-[100px] rounded-full pointer-events-none" />
+        
+        <motion.div 
+          initial={{ opacity: 0, y: 40, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: "spring", duration: 0.8, bounce: 0.3 }}
+          className="bg-white border-8 border-kids-primary/20 rounded-[4rem] w-full max-w-xl p-12 text-center shadow-2xl relative z-10 flex flex-col items-center gap-8"
+        >
+          {/* Logo container */}
+          <motion.div 
+            animate={{ 
+              y: [0, -12, 0],
+              rotate: [-4, 4, -4]
+            }}
+            transition={{
+              repeat: Infinity,
+              duration: 4,
+              ease: "easeInOut"
+            }}
+            className="w-32 h-32 bg-kids-primary rounded-[3rem] flex items-center justify-center shadow-xl border-4 border-white cursor-pointer relative"
+          >
+            <Hand size={64} className="text-white" />
+            <div className="absolute -top-2 -right-2 bg-kids-accent text-kids-text p-2 rounded-full border-4 border-white shadow-md animate-pulse">
+              <Sparkles size={18} />
+            </div>
+          </motion.div>
+
+          <div className="space-y-4">
+            <h1 className="text-4xl sm:text-5xl font-display font-black tracking-tight text-kids-primary">
+              MAGIC GESTURE QUIZ! ✨
+            </h1>
+            <p className="text-lg sm:text-xl font-bold text-kids-text/60 max-w-md mx-auto leading-relaxed">
+              Play fun quizzes using your actual hand gestures and magic camera check! 🚀
+            </p>
+          </div>
+
+          <div className="w-full h-1 bg-kids-text/5 rounded-full" />
+
+          <div className="space-y-6 w-full">
+            <p className="text-sm font-black uppercase tracking-widest text-kids-secondary animate-pulse">
+              Join the fun to start playing! 🌟
+            </p>
+            
+            <button
+              onClick={loginWithGoogle}
+              className="kids-btn kids-btn-primary w-full py-5 text-xl flex items-center justify-center gap-4 group hover:scale-[1.02] active:scale-[0.98] shadow-lg transition-transform"
+            >
+              <LogIn size={26} />
+              Let's Go Play!
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   if (!detector) {
     return (
       <div className="min-h-screen bg-kids-bg flex flex-col items-center justify-center text-kids-text font-display">
