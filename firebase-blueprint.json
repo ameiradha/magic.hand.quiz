@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Private user information and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Quiz": {
+      "title": "Quiz Topic",
+      "description": "A collection of questions under a specific topic",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "number" },
+              "text": { "type": "string" },
+              "imageUrl": { "type": "string" },
+              "options": { "type": "array" },
+              "correctAnswer": { "type": "number" }
+            }
+          }
+        }
+      },
+      "required": ["title", "authorId", "questions"]
+    },
+    "History": {
+      "title": "Quiz History",
+      "description": "A record of a completed quiz attempt",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "quizTitle": { "type": "string" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "quizId", "score", "totalQuestions", "completedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Publicly accessible quizzes"
+    },
+    "/history/{attemptId}": {
+      "schema": "History",
+      "description": "User-specific quiz results"
+    }
+  }
+}

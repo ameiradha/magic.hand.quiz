@@ -1,0 +1,5 @@
+{
+  "name": "Gesture Quiz",
+  "description": "A gesture-based quiz app with multiple topics, user accounts, and progress tracking.",
+  "requestFramePermissions": ["camera"]
+}

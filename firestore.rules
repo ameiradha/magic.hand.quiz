@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: quizzes
+    // Document ID: {quizId} (Auto-generated)
+    // Fields:
+    //   - title: string (required, 1-100 chars)
+    //   - description: string (optional, 0-500 chars)
+    //   - authorId: string (required, matches creator UID)
+    //   - createdAt: timestamp (required)
+    //   - questions: list (required, max 100 items)
+    //
+    // Collection: history
+    // Document ID: {attemptId} (Auto-generated)
+    // Fields:
+    //   - userId: string (required, matches user UID)
+    //   - quizId: string (required)
+    //   - quizTitle: string (required)
+    //   - score: number (required, >= 0)
+    //   - totalQuestions: number (required, > 0)
+    //   - completedAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.authorId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidQuiz(data) {
+      return data.keys().hasAll(['title', 'authorId', 'questions', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.authorId == request.auth.uid &&
+             data.questions is list && data.questions.size() <= 100 &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidHistory(data) {
+      return data.keys().hasAll(['userId', 'quizId', 'quizTitle', 'score', 'totalQuestions', 'completedAt']) &&
+             data.userId == request.auth.uid &&
+             data.score is number && data.score >= 0 &&
+             data.totalQuestions is number && data.totalQuestions > 0 &&
+             data.completedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && 
+                      isValidUser(request.resource.data) && 
+                      (
+                        !('createdAt' in request.resource.data) || 
+                        request.resource.data.createdAt == resource.data.createdAt
+                      );
+    }
+
+    match /quizzes/{quizId} {
+      allow read: if true; // Allow public read for the quiz library
+      allow create: if isAuthenticated() && isValidQuiz(request.resource.data);
+      allow update: if isDocOwner() && isValidQuiz(request.resource.data) &&
+                      request.resource.data.authorId == resource.data.authorId &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isDocOwner();
+    }
+
+    match /history/{attemptId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && isValidHistory(request.resource.data);
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+  }
+}

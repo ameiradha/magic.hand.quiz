@@ -1,0 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&family=Quicksand:wght@300..700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Quicksand", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fredoka", sans-serif;
+  
+  --color-kids-primary: #FF6B6B;
+  --color-kids-secondary: #4ECDC4;
+  --color-kids-accent: #FFE66D;
+  --color-kids-bg: #F7FFF7;
+  --color-kids-text: #2F3061;
+}
+
+body {
+  @apply bg-kids-bg text-kids-text font-sans;
+}
+
+.kids-card {
+  @apply bg-white rounded-[2rem] shadow-[0_8px_0_rgba(0,0,0,0.05)] border-4 border-kids-text/5 p-6 transition-all hover:translate-y-[-4px] hover:shadow-[0_12px_0_rgba(0,0,0,0.05)];
+}
+
+.kids-btn {
+  @apply px-6 py-3 rounded-2xl font-display font-bold text-lg transition-all active:scale-95 shadow-[0_4px_0_rgba(0,0,0,0.2)] active:shadow-none active:translate-y-[4px];
+}
+
+.kids-btn-primary {
+  @apply bg-kids-primary text-white hover:opacity-90;
+}
+
+.kids-btn-secondary {
+  @apply bg-kids-secondary text-white hover:opacity-90;
+}
+
+.kids-btn-accent {
+  @apply bg-kids-accent text-kids-text hover:opacity-90;
+}
