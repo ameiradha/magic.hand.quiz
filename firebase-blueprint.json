@@ -21,6 +21,7 @@
         "title": { "type": "string" },
         "description": { "type": "string" },
         "authorId": { "type": "string" },
+        "authorEmail": { "type": "string", "format": "email" },
         "createdAt": { "type": "string", "format": "date-time" },
         "questions": {
           "type": "array",
@@ -60,7 +61,7 @@
     },
     "/quizzes/{quizId}": {
       "schema": "Quiz",
-      "description": "Publicly accessible quizzes"
+      "description": "User-specific quizzes, accessible only to the creator"
     },
     "/history/{attemptId}": {
       "schema": "History",

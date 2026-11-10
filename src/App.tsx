@@ -24,6 +24,7 @@ export interface QuizTopic {
   title: string;
   description?: string;
   authorId: string;
+  authorEmail?: string;
   createdAt: any;
   questions: Question[];
 }
@@ -181,16 +182,28 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Quizzes
+  // Fetch Quizzes (strictly isolated to the logged-in user)
   useEffect(() => {
-    if (!isAuthReady) return;
-    const q = query(collection(db, 'quizzes'), orderBy('createdAt', 'desc'));
+    if (!user) {
+      setQuizzes([]);
+      return;
+    }
+    const q = query(
+      collection(db, 'quizzes'),
+      where('authorId', '==', user.uid)
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const quizList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as QuizTopic));
+      // Sort in memory by createdAt descending to avoid composite index requirements
+      quizList.sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : 0);
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : 0);
+        return timeB - timeA;
+      });
       setQuizzes(quizList);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'quizzes'));
     return () => unsubscribe();
-  }, [isAuthReady]);
+  }, [user]);
 
   // Fetch History
   useEffect(() => {
@@ -246,6 +259,7 @@ export default function App() {
       title: "New Quiz Topic",
       description: "Enter a description...",
       authorId: user.uid,
+      authorEmail: user.email || "",
       createdAt: serverTimestamp(),
       questions: [DEFAULT_QUESTIONS[0]]
     };
@@ -257,6 +271,28 @@ export default function App() {
       setSelectedQuiz(quizWithId);
       setQuestions(quizWithId.questions);
       setMode('editor');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'quizzes');
+    }
+  };
+
+  const createStarterQuiz = async () => {
+    if (!user) return;
+    const starterQuiz: Omit<QuizTopic, 'id'> = {
+      title: "Hand Magic Starter Adventure",
+      description: "Fun animals, shapes, and numbers to test your hand gestures! ✨",
+      authorId: user.uid,
+      authorEmail: user.email || "",
+      createdAt: serverTimestamp(),
+      questions: DEFAULT_QUESTIONS
+    };
+    try {
+      const sanitizedQuiz = sanitizeForFirestore(starterQuiz);
+      const docRef = await addDoc(collection(db, 'quizzes'), sanitizedQuiz);
+      const quizWithId = { ...starterQuiz, id: docRef.id } as QuizTopic;
+      setSelectedQuiz(quizWithId);
+      setQuestions(quizWithId.questions);
+      setNotification({ message: "Starter Adventure created for your account! 🚀", type: 'success' });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'quizzes');
     }
@@ -282,7 +318,11 @@ export default function App() {
     try {
       const sanitizedQuestions = sanitizeForFirestore(updatedQuestions);
       const quizRef = doc(db, 'quizzes', selectedQuiz.id);
-      await setDoc(quizRef, { questions: sanitizedQuestions }, { merge: true });
+      await setDoc(quizRef, { 
+        questions: sanitizedQuestions,
+        authorId: selectedQuiz.authorId || user.uid,
+        authorEmail: selectedQuiz.authorEmail || user.email || ""
+      }, { merge: true });
       setSelectedQuiz({ ...selectedQuiz, questions: sanitizedQuestions });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `quizzes/${selectedQuiz.id}`);
@@ -618,7 +658,9 @@ export default function App() {
       const quizRef = doc(db, 'quizzes', selectedQuiz.id);
       await setDoc(quizRef, { 
         questions: sanitizeForFirestore(updatedQuestions),
-        title: updatedQuiz.title 
+        title: updatedQuiz.title,
+        authorId: selectedQuiz.authorId || user.uid,
+        authorEmail: selectedQuiz.authorEmail || user.email || ""
       }, { merge: true });
 
       setQuestions(updatedQuestions);
@@ -639,6 +681,9 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'quizzes', quizId));
       setDeleteConfirmId(null);
+      if (selectedQuiz?.id === quizId) {
+        setSelectedQuiz(null);
+      }
       setNotification({ message: "Game deleted successfully!", type: 'success' });
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `quizzes/${quizId}`);
@@ -812,7 +857,16 @@ export default function App() {
               </button>
             )}
             <button
-              onClick={() => setMode('editor')}
+              onClick={() => {
+                if (quizzes.length > 0 && !selectedQuiz) {
+                  setSelectedQuiz(quizzes[0]);
+                  setQuestions(quizzes[0].questions);
+                } else if (quizzes.length === 0) {
+                  createNewQuiz();
+                  return;
+                }
+                setMode('editor');
+              }}
               className={`px-6 py-2 rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${mode === 'editor' ? 'bg-kids-secondary text-white shadow-md' : 'text-kids-text/60 hover:text-kids-text'}`}
             >
               <Settings size={18} /> Create
@@ -823,7 +877,7 @@ export default function App() {
 
           {user ? (
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border-2 border-kids-text/5 shadow-sm">
+              <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border-2 border-kids-text/5 shadow-sm">
                 {user.photoURL ? (
                   <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border-2 border-kids-secondary" />
                 ) : (
@@ -831,7 +885,10 @@ export default function App() {
                     <UserIcon size={16} />
                   </div>
                 )}
-                <span className="text-sm font-bold hidden md:block">{user.displayName}</span>
+                <div className="hidden md:flex flex-col text-left">
+                  <span className="text-xs font-black text-kids-text truncate max-w-[150px]">{user.displayName || "User"}</span>
+                  <span className="text-[10px] font-bold text-kids-secondary truncate max-w-[150px]">{user.email}</span>
+                </div>
               </div>
               <button
                 onClick={logout}
@@ -898,8 +955,13 @@ export default function App() {
             >
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-4xl font-display font-black text-kids-primary">Choose an Adventure!</h2>
-                    <p className="text-lg font-bold text-kids-text/50">Pick a topic and show your magic hands! ✨</p>
+                    <h2 className="text-4xl font-display font-black text-kids-primary">My Adventures! 🚀</h2>
+                    <p className="text-sm sm:text-base font-bold text-kids-text/60 flex flex-wrap items-center gap-2 mt-1">
+                      <span>Private library synced with:</span>
+                      <span className="px-3 py-1 bg-kids-secondary/15 text-kids-secondary rounded-full font-black text-xs sm:text-sm">
+                        {user?.email}
+                      </span>
+                    </p>
                   </div>
                   {user && (
                     <div className="flex items-center gap-3">
@@ -943,13 +1005,20 @@ export default function App() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {quizzes.length === 0 ? (
-                  <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border-4 border-kids-text/5 border-dashed">
+                  <div className="col-span-full py-16 px-6 text-center bg-white rounded-[3rem] border-4 border-kids-text/5 border-dashed">
                     <BookOpen className="mx-auto text-kids-text/10 mb-4" size={64} />
-                    <h3 className="text-2xl font-display font-black text-kids-text/40 mb-2">No Games Yet!</h3>
-                    <p className="text-kids-text/30 font-bold mb-8">Be the first to create a magic adventure!</p>
-                    {!user && (
-                      <button onClick={loginWithGoogle} className="kids-btn kids-btn-primary">Login to Create</button>
-                    )}
+                    <h3 className="text-3xl font-display font-black text-kids-text mb-2">No Games Yet for You!</h3>
+                    <p className="text-kids-text/50 font-bold mb-8 max-w-md mx-auto">
+                      All your quizzes are completely private to your account ({user?.email}) and never shared with other users. Create a new game or load the Starter Adventure to begin! ✨
+                    </p>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                      <button onClick={createNewQuiz} className="kids-btn kids-btn-primary flex items-center gap-2 py-4 px-8">
+                        <Plus size={22} /> Create a New Game
+                      </button>
+                      <button onClick={createStarterQuiz} className="kids-btn kids-btn-secondary flex items-center gap-2 py-4 px-8">
+                        <Sparkles size={22} /> Add Starter Adventure
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   quizzes.map((quiz, idx) => {
