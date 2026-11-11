@@ -8,7 +8,7 @@ import {
   LogOut, LogIn, History as HistoryIcon, Library, BookOpen,
   User as UserIcon, Loader2, ExternalLink, FileUp, Sparkles
 } from "lucide-react";
-import { initHandDetection, countFingers } from "./lib/handDetection";
+import { initHandDetection, countFingers, drawHandOnCanvas } from "./lib/handDetection";
 import { QUIZ_QUESTIONS as DEFAULT_QUESTIONS, Question } from "./constants";
 import { auth, db, loginWithGoogle, logout, OperationType, handleFirestoreError } from "./firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
@@ -47,6 +47,13 @@ const WRONG_SOUND = "https://assets.mixkit.co/active_storage/sfx/2959/2959-previ
 
 export default function App() {
   const webcamRef = useRef<Webcam>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const testWebcamRef = useRef<Webcam>(null);
+  const testCanvasRef = useRef<HTMLCanvasElement>(null);
+  const lastVideoTimeRef = useRef<number>(-1);
+  const [isHandInFrame, setIsHandInFrame] = useState(false);
+  const [testFingers, setTestFingers] = useState<number | null>(null);
+
   const [detector, setDetector] = useState<any>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -124,7 +131,11 @@ export default function App() {
 
   // Initialize detector
   useEffect(() => {
-    initHandDetection().then(setDetector);
+    initHandDetection()
+      .then(setDetector)
+      .catch(err => {
+        console.error("Failed to initialize hand detector:", err);
+      });
     
     if (!window.isSecureContext) {
       setCameraError("Camera access requires a secure (HTTPS) connection. Please ensure you are using HTTPS.");
@@ -456,21 +467,51 @@ export default function App() {
 
   const detect = useCallback(async () => {
     if (
-      mode === 'quiz' &&
-      detector &&
-      webcamRef.current &&
-      webcamRef.current.video &&
-      webcamRef.current.video.readyState === 4 &&
-      !feedbackRef.current &&
-      !isQuizFinishedRef.current &&
-      currentQuestionRef.current
+      mode !== 'quiz' ||
+      !detector ||
+      !webcamRef.current ||
+      !webcamRef.current.video ||
+      feedbackRef.current ||
+      isQuizFinishedRef.current ||
+      !currentQuestionRef.current
     ) {
-      const video = webcamRef.current.video;
-      const results = detector.detectForVideo(video, performance.now());
+      return;
+    }
 
-      if (results.landmarks && results.landmarks.length > 0) {
-        const fingers = countFingers(results.landmarks[0]);
+    const video = webcamRef.current.video;
+    // Check readyState >= 2 (HAVE_CURRENT_DATA) and non-zero dimensions
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      return;
+    }
+
+    // Ensure timestamp is strictly increasing for MediaPipe
+    const now = performance.now();
+    if (now <= lastVideoTimeRef.current) {
+      return;
+    }
+    lastVideoTimeRef.current = now;
+
+    // Synchronize canvas resolution with video stream
+    if (canvasRef.current) {
+      if (canvasRef.current.width !== video.videoWidth || canvasRef.current.height !== video.videoHeight) {
+        canvasRef.current.width = video.videoWidth;
+        canvasRef.current.height = video.videoHeight;
+      }
+    }
+
+    try {
+      const results = detector.detectForVideo(video, now);
+
+      if (results && results.landmarks && results.landmarks.length > 0) {
+        setIsHandInFrame(true);
+        const hand = results.landmarks[0];
+        const fingers = countFingers(hand);
         setDetectedFingers(fingers);
+
+        // Render playful tracking dots and skeleton
+        if (canvasRef.current) {
+          drawHandOnCanvas(canvasRef.current, hand, true);
+        }
 
         if (fingers >= 1 && fingers <= 4) {
           if (fingers === lastDetectedFingersRef.current) {
@@ -491,10 +532,8 @@ export default function App() {
                   setFeedback("incorrect");
                   playSound("incorrect");
                 }
-                // Reset refs for next question
                 startTimeRef.current = null;
                 lastDetectedFingersRef.current = 0;
-                // Auto-advance after 2 seconds
                 setTimeout(handleNextQuestion, 2000);
               }
             } else {
@@ -509,14 +548,20 @@ export default function App() {
           startTimeRef.current = null;
           setSelectionProgress(0);
           lastDetectedFingersRef.current = 0;
-          setDetectedFingers(0);
         }
       } else {
+        setIsHandInFrame(false);
         setDetectedFingers(0);
         startTimeRef.current = null;
         setSelectionProgress(0);
         lastDetectedFingersRef.current = 0;
+        if (canvasRef.current) {
+          const ctx = canvasRef.current.getContext("2d");
+          if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
       }
+    } catch (err) {
+      console.warn("Hand detection frame error:", err);
     }
   }, [detector, handleNextQuestion, mode]);
 
@@ -532,6 +577,56 @@ export default function App() {
     }
     return () => cancelAnimationFrame(animationId);
   }, [detector, detect, mode]);
+
+  // Detection loop during Camera Test Modal for real-time verification
+  useEffect(() => {
+    let animId: number;
+    let lastTestTime = -1;
+
+    const testLoop = () => {
+      if (showCameraTest && detector && testWebcamRef.current && testWebcamRef.current.video) {
+        const video = testWebcamRef.current.video;
+        if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+          const now = performance.now();
+          if (now > lastTestTime) {
+            lastTestTime = now;
+            if (testCanvasRef.current) {
+              if (testCanvasRef.current.width !== video.videoWidth || testCanvasRef.current.height !== video.videoHeight) {
+                testCanvasRef.current.width = video.videoWidth;
+                testCanvasRef.current.height = video.videoHeight;
+              }
+            }
+            try {
+              const res = detector.detectForVideo(video, now);
+              if (res && res.landmarks && res.landmarks.length > 0) {
+                const count = countFingers(res.landmarks[0]);
+                setTestFingers(count);
+                if (testCanvasRef.current) {
+                  drawHandOnCanvas(testCanvasRef.current, res.landmarks[0], true);
+                }
+              } else {
+                setTestFingers(null);
+                if (testCanvasRef.current) {
+                  const ctx = testCanvasRef.current.getContext("2d");
+                  if (ctx) ctx.clearRect(0, 0, testCanvasRef.current.width, testCanvasRef.current.height);
+                }
+              }
+            } catch (e) {
+              console.warn("Test detection error:", e);
+            }
+          }
+        }
+      }
+      if (showCameraTest) {
+        animId = requestAnimationFrame(testLoop);
+      }
+    };
+
+    if (showCameraTest && detector) {
+      animId = requestAnimationFrame(testLoop);
+    }
+    return () => cancelAnimationFrame(animId);
+  }, [showCameraTest, detector]);
 
   const resetQuiz = () => {
     setCurrentQuestionIndex(0);
@@ -1240,6 +1335,8 @@ export default function App() {
                         screenshotFormat="image/jpeg"
                         videoConstraints={{
                           facingMode: "user",
+                          width: { ideal: 640 },
+                          height: { ideal: 480 },
                         }}
                         onUserMedia={() => {
                           setIsCameraReady(true);
@@ -1261,19 +1358,35 @@ export default function App() {
                         screenshotQuality={0.92}
                         className="w-full h-full object-cover opacity-90"
                       />
+
+                      {/* Real-time Hand Tracking Skeleton Overlay */}
+                      <canvas
+                        ref={canvasRef}
+                        className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+                      />
                       
                       {/* Overlay UI */}
                       <div className="absolute inset-0 pointer-events-none">
                         <div className="absolute inset-0 bg-kids-primary/5" />
-                        <div className="absolute top-8 left-8 w-12 h-12 border-t-4 border-l-4 border-kids-accent rounded-tl-3xl" />
-                        <div className="absolute top-8 right-8 w-12 h-12 border-t-4 border-r-4 border-kids-accent rounded-tr-3xl" />
-                        <div className="absolute bottom-8 left-8 w-12 h-12 border-b-4 border-l-4 border-kids-accent rounded-bl-3xl" />
-                        <div className="absolute bottom-8 right-8 w-12 h-12 border-b-4 border-r-4 border-kids-accent rounded-br-3xl" />
+                        <div className="absolute top-8 left-8 w-12 h-12 border-t-4 border-l-4 border-kids-accent rounded-tl-3xl z-20" />
+                        <div className="absolute top-8 right-8 w-12 h-12 border-t-4 border-r-4 border-kids-accent rounded-tr-3xl z-20" />
+                        <div className="absolute bottom-8 left-8 w-12 h-12 border-b-4 border-l-4 border-kids-accent rounded-bl-3xl z-20" />
+                        <div className="absolute bottom-8 right-8 w-12 h-12 border-b-4 border-r-4 border-kids-accent rounded-br-3xl z-20" />
 
-                        <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 bg-white rounded-full border-4 border-kids-accent shadow-lg">
-                          <div className={`w-4 h-4 rounded-full ${detectedFingers > 0 ? "bg-green-500 animate-ping" : "bg-red-500"}`} />
+                        <div className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-3 px-6 py-3 bg-white rounded-full border-4 border-kids-accent shadow-lg z-20 whitespace-nowrap">
+                          <div className={`w-4 h-4 rounded-full ${
+                            detectedFingers > 0 
+                              ? "bg-green-500 animate-ping" 
+                              : isHandInFrame 
+                                ? "bg-yellow-400 animate-pulse" 
+                                : "bg-red-500"
+                          }`} />
                           <span className="text-sm font-black uppercase tracking-widest text-kids-text">
-                            {detectedFingers > 0 ? `I SEE ${detectedFingers} FINGERS!` : "SHOW ME YOUR HAND!"}
+                            {detectedFingers > 0 
+                              ? `I SEE ${detectedFingers} FINGER${detectedFingers > 1 ? 'S' : ''}! ✨` 
+                              : isHandInFrame 
+                                ? "HAND SEEN! RAISE 1-4 FINGERS" 
+                                : "SHOW YOUR HAND TO CAMERA! 👋"}
                           </span>
                         </div>
 
@@ -1829,8 +1942,14 @@ export default function App() {
                   <div className="space-y-4">
                     <div className="aspect-video bg-kids-text rounded-[2rem] overflow-hidden border-4 border-kids-text/5 relative shadow-inner">
                       <Webcam
+                        ref={testWebcamRef}
                         audio={false}
                         mirrored={true}
+                        videoConstraints={{
+                          facingMode: "user",
+                          width: { ideal: 640 },
+                          height: { ideal: 480 },
+                        }}
                         className="w-full h-full object-cover opacity-90"
                         onUserMedia={() => setIsCameraReady(true)}
                         onUserMediaError={() => setIsCameraReady(false)}
@@ -1840,18 +1959,39 @@ export default function App() {
                         screenshotFormat="image/jpeg"
                         screenshotQuality={0.92}
                       />
+                      {/* Real-time hand tracking test canvas */}
+                      <canvas
+                        ref={testCanvasRef}
+                        className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+                      />
                       {!isCameraReady && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-kids-text/10 backdrop-blur-sm">
+                        <div className="absolute inset-0 flex items-center justify-center bg-kids-text/10 backdrop-blur-sm z-20">
                           <Camera size={48} className="text-white/40 animate-pulse" />
                         </div>
                       )}
                     </div>
                     <div className="flex items-center justify-between px-6 py-4 bg-kids-text/5 rounded-2xl border-2 border-kids-text/5">
-                      <span className="text-sm font-black uppercase tracking-widest text-kids-text/40">Magic Status</span>
+                      <span className="text-sm font-black uppercase tracking-widest text-kids-text/40">Magic Hand Test</span>
                       <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full ${isCameraReady ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`} />
-                        <span className={`text-sm font-black uppercase ${isCameraReady ? 'text-green-500' : 'text-red-500'}`}>
-                          {isCameraReady ? 'Active!' : 'Blocked!'}
+                        <div className={`w-3 h-3 rounded-full ${
+                          testFingers !== null 
+                            ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)] animate-ping' 
+                            : isCameraReady 
+                              ? 'bg-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.5)]' 
+                              : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'
+                        }`} />
+                        <span className={`text-sm font-black uppercase ${
+                          testFingers !== null 
+                            ? 'text-green-500' 
+                            : isCameraReady 
+                              ? 'text-yellow-600' 
+                              : 'text-red-500'
+                        }`}>
+                          {testFingers !== null 
+                            ? `Hand Detected (${testFingers} Fingers! ✨)` 
+                            : isCameraReady 
+                              ? 'Wave Hand to Test!' 
+                              : 'Camera Blocked!'}
                         </span>
                       </div>
                     </div>
