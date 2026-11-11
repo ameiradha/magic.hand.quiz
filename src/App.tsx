@@ -1495,16 +1495,34 @@ export default function App() {
                     </div>
 
                     <div className="p-6 bg-kids-text/5 rounded-3xl border-4 border-kids-text/5 space-y-4">
-                      <div className="flex items-center gap-3 text-kids-text/60">
-                        <Timer size={18} />
-                        <p className="text-sm font-bold">Hold your hand steady for 1.5s to confirm your answer.</p>
+                      <div className="flex items-center justify-between gap-3 text-kids-text/70">
+                        <div className="flex items-center gap-3">
+                          <Timer size={18} className="text-kids-primary" />
+                          <p className="text-sm font-bold">Raise 1-4 fingers (hold 1.5s) OR tap options directly on screen!</p>
+                        </div>
                       </div>
                       <div className="grid grid-cols-4 gap-2">
                         {[1, 2, 3, 4].map((n) => (
-                          <div key={n} className="flex flex-col items-center gap-1">
-                            <div className={`w-full h-2 rounded-full ${detectedFingers === n ? "bg-kids-primary" : "bg-kids-text/10"}`} />
-                            <span className="text-[8px] font-black text-kids-text/30 uppercase">{n} {n === 1 ? "Finger" : "Fingers"}</span>
-                          </div>
+                          <button
+                            key={n}
+                            onClick={() => {
+                              if (feedback) return;
+                              setDetectedFingers(n);
+                              setSelectionProgress(100);
+                              const currentQ = questions[currentQuestionIndex];
+                              if (currentQ) {
+                                const isCorrect = (n - 1) === currentQ.correctAnswer;
+                                setFeedback(isCorrect ? "correct" : "incorrect");
+                                if (isCorrect) setScore(prev => prev + 1);
+                                playSound(isCorrect ? "correct" : "incorrect");
+                                setTimeout(handleNextQuestion, 2000);
+                              }
+                            }}
+                            className="flex flex-col items-center gap-1 group/btn transition-transform active:scale-95"
+                          >
+                            <div className={`w-full h-3 rounded-full transition-colors ${detectedFingers === n ? "bg-kids-primary shadow-[0_0_8px_rgba(255,107,107,0.6)]" : "bg-kids-text/10 group-hover/btn:bg-kids-primary/40"}`} />
+                            <span className="text-[10px] font-black text-kids-text/50 uppercase group-hover/btn:text-kids-primary">Choice {n}</span>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -1559,22 +1577,36 @@ export default function App() {
                         return (
                           <motion.div
                             key={index}
+                            onClick={() => {
+                              if (feedback) return;
+                              const key = index + 1;
+                              setDetectedFingers(key);
+                              setSelectionProgress(100);
+                              const currentQ = questions[currentQuestionIndex];
+                              if (currentQ) {
+                                const isCorrect = index === currentQ.correctAnswer;
+                                setFeedback(isCorrect ? "correct" : "incorrect");
+                                if (isCorrect) setScore(prev => prev + 1);
+                                playSound(isCorrect ? "correct" : "incorrect");
+                                setTimeout(handleNextQuestion, 2000);
+                              }
+                            }}
                             animate={{ 
                               scale: isSelected ? 1.02 : 1,
                               x: isSelected ? 10 : 0
                             }}
-                            className={`relative flex items-center gap-6 p-6 rounded-3xl border-4 transition-all ${
+                            className={`relative flex items-center gap-6 p-6 rounded-3xl border-4 transition-all cursor-pointer select-none active:scale-[0.98] ${
                               isCorrect ? "bg-green-500/20 border-green-500 shadow-lg" :
                               isWrong ? "bg-red-500/20 border-red-500 shadow-lg" :
                               isSelected ? "bg-kids-accent/20 border-kids-accent shadow-lg" :
-                              "bg-white border-kids-text/5 hover:border-kids-text/10"
+                              "bg-white border-kids-text/5 hover:border-kids-primary/30 hover:bg-kids-primary/5"
                             }`}
                           >
-                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black shadow-md ${
+                            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black shadow-md transition-colors ${
                               isCorrect ? "bg-green-500 text-white" :
                               isWrong ? "bg-red-500 text-white" :
                               isSelected ? "bg-kids-accent text-kids-text" :
-                              "bg-kids-text/5 text-kids-text/40"
+                              "bg-kids-text/5 text-kids-text/40 group-hover:bg-kids-primary group-hover:text-white"
                             }`}>
                               {index + 1}
                             </div>
@@ -1583,7 +1615,7 @@ export default function App() {
                               {optionImage && (
                                 <img src={optionImage} className="w-16 h-16 rounded-xl object-cover border-2 border-kids-text/5" alt="" />
                               )}
-                              <span className={`text-xl font-bold ${isSelected || isCorrect || isWrong ? "text-kids-text" : "text-kids-text/60"}`}>
+                              <span className={`text-xl font-bold ${isSelected || isCorrect || isWrong ? "text-kids-text" : "text-kids-text/70"}`}>
                                 {optionText}
                               </span>
                             </div>
